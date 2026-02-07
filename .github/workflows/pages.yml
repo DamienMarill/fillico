@@ -1,0 +1,66 @@
+name: Deploy Landing Page to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "landing/**"
+      - "web/assets/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 📂 Prepare landing page
+        run: |
+          mkdir -p landing/assets/images
+
+          # Copier les assets du projet vers la landing
+          if [ -d "web/assets/images" ]; then
+            cp -r web/assets/images/* landing/assets/images/ 2>/dev/null || true
+          fi
+
+          # Copier les assets de la racine si existants
+          if [ -d "assets" ]; then
+            cp -r assets/* landing/assets/ 2>/dev/null || true
+          fi
+
+          echo "📁 Contenu du dossier landing:"
+          ls -la landing/
+          echo "📁 Contenu des assets:"
+          ls -la landing/assets/images/ 2>/dev/null || echo "Pas d'images"
+
+      - name: 📦 Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./landing"
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
