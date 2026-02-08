@@ -67,7 +67,10 @@
   --radius-xl: 30px;
   --radius-2xl: 40px;
   --radius-pill: 9999px;
-  --radius-card: 30px;
+  --radius-card: 2rem;
+  --card-padding: 1rem; /* = var(--space-6) */
+  /* Nested border radius: inner = outer - padding */
+  --radius-inner: 1rem;
 
   /* ═══════════════════════════════════════════════════════════════
    * OMBRES COLORÉES (Glow)

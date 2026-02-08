@@ -660,6 +660,29 @@ function onPdfProgress(filePath, currentPage, totalPages) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// LOGO BOUNCE
+// ═══════════════════════════════════════════════════════════════
+
+function initLogoBounce() {
+  const logo = document.querySelector('.app-logo img');
+  if (logo) {
+    logo.classList.add('clickable-bounce');
+    
+    logo.addEventListener('click', () => {
+      // Reset animation si déjà en cours
+      logo.classList.remove('bouncing');
+      void logo.offsetWidth; // Force reflow
+      logo.classList.add('bouncing');
+      
+      // Retirer la classe après l'animation
+      setTimeout(() => {
+        logo.classList.remove('bouncing');
+      }, 800);
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════
 
@@ -668,6 +691,14 @@ async function init() {
   initOpacitySlider();
   initOutputFolderPicker();
   initProcessButton();
+  
+  // Init Background Assets
+  if (window.bgAssets) {
+    window.bgAssets.init();
+  }
+
+  // Init Logo Bounce
+  initLogoBounce();
 
   // Définir le dossier de sortie par défaut (home directory)
   if (typeof eel !== "undefined") {

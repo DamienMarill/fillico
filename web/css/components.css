@@ -35,7 +35,7 @@ body {
   gap: var(--space-2);
   padding: var(--space-3) var(--space-6);
   border: none;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-inner);
   font-family: var(--font-body);
   font-size: var(--font-size-base);
   font-weight: 700;
@@ -97,6 +97,7 @@ body {
 /* ═══════════════════════════════════════════════════════════════
  * CARDS - Glassmorphism
  * ═══════════════════════════════════════════════════════════════ */
+
 .card {
   background: var(--frosted-glass);
   backdrop-filter: blur(20px);
@@ -104,6 +105,10 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.5);
   padding: var(--space-6);
   box-shadow: var(--shadow-card);
+  /* Capturer les clics sur les cartes */
+  pointer-events: auto;
+  position: relative;
+  z-index: 10;
 }
 
 .card-pink {
@@ -123,7 +128,7 @@ body {
   width: 100%;
   padding: var(--space-3) var(--space-4);
   border: 2px solid var(--magic-berry-light);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-inner);
   font-family: var(--font-body);
   font-size: var(--font-size-base);
   color: var(--deep-grape);
@@ -154,7 +159,7 @@ body {
   min-height: 200px;
   padding: var(--space-4);
   border: 3px dashed var(--magic-berry-light);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-inner);
   background: var(--frosted-glass);
   backdrop-filter: blur(10px);
   cursor: pointer;
@@ -205,7 +210,7 @@ body {
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   background: var(--frosted-glass);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-inner);
   border: 1px solid var(--magic-berry-light);
 }
 
@@ -398,6 +403,55 @@ body {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * BOUNCE SQUISH - Animation "pichenette élastique"
+ * ═══════════════════════════════════════════════════════════════ */
+@keyframes bounce-squish {
+  /* Effet "pichenette élastique" - compression puis oscillations */
+  0% { transform: scale(1); }
+  /* Impact - compression initiale */
+  8% { transform: scale(0.75); }
+  /* Premier rebond - extension */
+  20% { transform: scale(1.15); }
+  /* Retour compression légère */
+  32% { transform: scale(0.92); }
+  /* Deuxième rebond - plus petit */
+  44% { transform: scale(1.06); }
+  /* Retour */
+  56% { transform: scale(0.97); }
+  /* Troisième rebond - micro */
+  70% { transform: scale(1.02); }
+  /* Retour */
+  82% { transform: scale(0.99); }
+  /* Stabilisation */
+  100% { transform: scale(1); }
+}
+
+.clickable-bounce {
+  cursor: pointer;
+}
+
+.clickable-bounce.bouncing {
+  animation: bounce-squish 0.8s ease-out;
+}
+
+/* Variante avec rotation préservée (pour bg-assets) */
+@keyframes bounce-squish-rotated {
+  0% { transform: rotate(var(--rot)) scale(1); }
+  8% { transform: rotate(var(--rot)) scale(0.75); }
+  20% { transform: rotate(var(--rot)) scale(1.15); }
+  32% { transform: rotate(var(--rot)) scale(0.92); }
+  44% { transform: rotate(var(--rot)) scale(1.06); }
+  56% { transform: rotate(var(--rot)) scale(0.97); }
+  70% { transform: rotate(var(--rot)) scale(1.02); }
+  82% { transform: rotate(var(--rot)) scale(0.99); }
+  100% { transform: rotate(var(--rot)) scale(1); }
+}
+
+.bg-asset.bouncing {
+  animation: bounce-squish-rotated 0.8s ease-out;
 }
 
 /* ═══════════════════════════════════════════════════════════════
