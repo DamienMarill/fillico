@@ -5,8 +5,12 @@
 
 import sys
 from pathlib import Path
+import os
 
 block_cipher = None
+
+# Chemin absolu vers l'icône
+ICON_PATH = os.path.join(os.getcwd(), 'fillico.ico')
 
 a = Analysis(
     ['main.py'],
@@ -75,4 +79,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON_PATH,
 )
