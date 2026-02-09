@@ -10,12 +10,13 @@ block_cipher = None
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=['src'],
     binaries=[],
     datas=[
         ('web', 'web'),
         ('assets', 'assets'),
         ('pyproject.toml', '.'),
+        ('src', 'src'),
     ],
     hiddenimports=[
         'eel',
@@ -33,6 +34,14 @@ a = Analysis(
         'reportlab',
         'reportlab.lib.pagesizes',
         'reportlab.pdfgen.canvas',
+        'ui',
+        'ui.app',
+        'ui.quick_mode',
+        'core',
+        'core.watermark_engine',
+        'core.image_processor',
+        'core.pdf_processor',
+        'core.watermark_renderer',
     ],
     hookspath=[],
     hooksconfig={},
