@@ -7,6 +7,8 @@ on:
       - "v*"
   pull_request:
     branches: [master]
+  release:
+    types: [created]
 
 jobs:
   # ═══════════════════════════════════════════════════════════════
@@ -59,11 +61,61 @@ jobs:
         run: |
           python -m PyInstaller fillico.spec --clean
 
+      - name: Create installer with NSIS
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          @"
+          !include "MUI2.nsh"
+
+          Name "Fillico"
+          OutFile "dist\Fillico-Setup.exe"
+          InstallDir "`$LOCALAPPDATA\Fillico"
+          RequestExecutionLevel user
+
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+
+          !insertmacro MUI_LANGUAGE "French"
+
+          Section "Install"
+            SetOutPath "`$INSTDIR"
+            File "dist\Fillico.exe"
+
+            CreateDirectory "`$SMPROGRAMS\Fillico"
+            CreateShortcut "`$SMPROGRAMS\Fillico\Fillico.lnk" "`$INSTDIR\Fillico.exe"
+            CreateShortcut "`$DESKTOP\Fillico.lnk" "`$INSTDIR\Fillico.exe"
+
+            WriteUninstaller "`$INSTDIR\Uninstall.exe"
+
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "DisplayName" "Fillico"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "UninstallString" "`$INSTDIR\Uninstall.exe"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "DisplayVersion" "$version"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "Publisher" "Fillico"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "`$INSTDIR\Fillico.exe"
+            Delete "`$INSTDIR\Uninstall.exe"
+            RMDir /r "`$INSTDIR"
+
+            Delete "`$SMPROGRAMS\Fillico\Fillico.lnk"
+            RMDir "`$SMPROGRAMS\Fillico"
+            Delete "`$DESKTOP\Fillico.lnk"
+
+            DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico"
+          SectionEnd
+          "@ | Out-File -FilePath installer.nsi -Encoding UTF8
+
+          makensis installer.nsi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Fillico-Windows
-          path: dist/Fillico.exe
+          path: dist/Fillico-Setup.exe
 
   # ═══════════════════════════════════════════════════════════════
   # BUILD LINUX
@@ -91,11 +143,47 @@ jobs:
         run: |
           python -m PyInstaller fillico.spec --clean
 
+      - name: Create .deb package
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          mkdir -p fillico-deb/DEBIAN
+          mkdir -p fillico-deb/usr/local/bin
+          mkdir -p fillico-deb/usr/share/applications
+          mkdir -p fillico-deb/usr/share/icons/hicolor/256x256/apps
+
+          cp dist/Fillico fillico-deb/usr/local/bin/fillico
+          chmod 755 fillico-deb/usr/local/bin/fillico
+
+          cp assets/images/logo.png fillico-deb/usr/share/icons/hicolor/256x256/apps/fillico.png
+
+          cat > fillico-deb/DEBIAN/control <<EOF
+          Package: fillico
+          Version: ${VERSION}
+          Architecture: amd64
+          Maintainer: Fillico
+          Description: Application de filigranage multi-plateforme avec style Kawaii Pop
+          Section: graphics
+          Priority: optional
+          EOF
+
+          cat > fillico-deb/usr/share/applications/fillico.desktop <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=Fillico
+          Comment=Application de filigranage Kawaii Pop
+          Exec=/usr/local/bin/fillico
+          Icon=fillico
+          Categories=Graphics;
+          Terminal=false
+          EOF
+
+          dpkg-deb --build fillico-deb "dist/Fillico-${VERSION}-amd64.deb"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Fillico-Linux
-          path: dist/Fillico
+          path: dist/Fillico-*-amd64.deb
 
   # ═══════════════════════════════════════════════════════════════
   # BUILD MACOS
@@ -123,11 +211,19 @@ jobs:
         run: |
           python -m PyInstaller fillico.spec --clean
 
+      - name: Create DMG installer
+        run: |
+          mkdir -p dmg-content
+          cp -p dist/Fillico dmg-content/
+          ln -s /Applications dmg-content/Applications
+
+          hdiutil create -volname "Fillico" -srcfolder dmg-content -ov -format UDZO "dist/Fillico-macOS.dmg"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Fillico-macOS
-          path: dist/Fillico
+          path: dist/Fillico-macOS.dmg
 
   # ═══════════════════════════════════════════════════════════════
   # RELEASE
@@ -165,9 +261,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/windows/Fillico.exe
-            artifacts/linux/Fillico
-            artifacts/macos/Fillico
+            artifacts/windows/Fillico-Setup.exe
+            artifacts/linux/*.deb
+            artifacts/macos/Fillico-macOS.dmg
           body: |
             # 🍭 Fillico ${{ github.ref_name }}
 
@@ -175,9 +271,9 @@ jobs:
 
             ## 📦 Téléchargements
 
-            - **Windows** : `Fillico.exe`
-            - **Linux** : `Fillico`
-            - **macOS** : `Fillico`
+            - **Windows** : `Fillico-Setup.exe` - Installateur Windows
+            - **Linux** : `Fillico-*-amd64.deb` - Paquet Debian/Ubuntu
+            - **macOS** : `Fillico-macOS.dmg` - Image disque macOS
 
             ## ✨ Fonctionnalités
 
