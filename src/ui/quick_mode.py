@@ -467,7 +467,10 @@ class QuickModeApp:
     def run(self):
         """Lance l'application."""
         self.root.mainloop()
-        self.root.destroy()
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
         return self.result
 
 

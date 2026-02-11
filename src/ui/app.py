@@ -269,7 +269,7 @@ def start_app():
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("fillico.app")
 
-    print("🍭 Fillico - Démarrage...")
+    print("Fillico - Demarrage...")
 
     api = FillicoAPI()
 
