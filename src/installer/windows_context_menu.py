@@ -53,7 +53,11 @@ class WindowsContextMenuInstaller:
         return quick_mode_path
 
     def _get_python_path(self) -> str:
-        """Retourne le chemin de Python."""
+        """Retourne le chemin de pythonw.exe (sans console) ou python.exe en fallback."""
+        python_dir = Path(sys.executable).parent
+        pythonw = python_dir / "pythonw.exe"
+        if pythonw.exists():
+            return str(pythonw)
         return sys.executable
 
     def _get_icon_path(self) -> str:

@@ -4,10 +4,26 @@ Point d'entrée de l'application avec Eel
 """
 
 import sys
+import subprocess
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# --- Windows: empêcher les fenêtres console flash ---
+# Eel lance Chrome/Edge via subprocess.Popen sans CREATE_NO_WINDOW,
+# ce qui provoque un flash de console. On monkey-patch Popen pour
+# ajouter ce flag automatiquement sur Windows.
+if sys.platform == "win32":
+    _OriginalPopen = subprocess.Popen
+
+    class _NoConsolePopen(_OriginalPopen):
+        def __init__(self, *args, **kwargs):
+            if "creationflags" not in kwargs:
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = _NoConsolePopen
 
 import eel
 from core import WatermarkEngine
