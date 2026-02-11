@@ -83,9 +83,22 @@ jobs:
 
           !insertmacro MUI_LANGUAGE "French"
 
+          ; Macro pour enregistrer le menu contextuel par extension
+          !macro RegisterContextMenu EXT
+            WriteRegStr HKCU "Software\Classes\SystemFileAssociations\`${EXT}\shell\Fillico" "" "Ajouter un filigrane"
+            WriteRegStr HKCU "Software\Classes\SystemFileAssociations\`${EXT}\shell\Fillico" "Icon" "`$INSTDIR\Fillico.exe"
+            WriteRegStr HKCU "Software\Classes\SystemFileAssociations\`${EXT}\shell\Fillico\command" "" '"`$INSTDIR\Fillico.exe" --quick "%1"'
+          !macroend
+
+          ; Macro pour supprimer le menu contextuel par extension
+          !macro UnregisterContextMenu EXT
+            DeleteRegKey HKCU "Software\Classes\SystemFileAssociations\`${EXT}\shell\Fillico"
+          !macroend
+
           Section "Install"
             SetOutPath "`$INSTDIR"
             File "dist\Fillico.exe"
+            File "fillico.ico"
 
             CreateDirectory "`$SMPROGRAMS\Fillico"
             CreateShortcut "`$SMPROGRAMS\Fillico\Fillico.lnk" "`$INSTDIR\Fillico.exe"
@@ -93,20 +106,39 @@ jobs:
 
             WriteUninstaller "`$INSTDIR\Uninstall.exe"
 
+            ; Infos de désinstallation
             WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "DisplayName" "Fillico"
             WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "UninstallString" "`$INSTDIR\Uninstall.exe"
             WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "DisplayVersion" "$version"
             WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "Publisher" "Fillico"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico" "DisplayIcon" "`$INSTDIR\fillico.ico"
+
+            ; Menu contextuel (clic droit)
+            !insertmacro RegisterContextMenu ".png"
+            !insertmacro RegisterContextMenu ".jpg"
+            !insertmacro RegisterContextMenu ".jpeg"
+            !insertmacro RegisterContextMenu ".bmp"
+            !insertmacro RegisterContextMenu ".gif"
+            !insertmacro RegisterContextMenu ".pdf"
           SectionEnd
 
           Section "Uninstall"
             Delete "`$INSTDIR\Fillico.exe"
+            Delete "`$INSTDIR\fillico.ico"
             Delete "`$INSTDIR\Uninstall.exe"
             RMDir /r "`$INSTDIR"
 
             Delete "`$SMPROGRAMS\Fillico\Fillico.lnk"
             RMDir "`$SMPROGRAMS\Fillico"
             Delete "`$DESKTOP\Fillico.lnk"
+
+            ; Nettoyage menu contextuel
+            !insertmacro UnregisterContextMenu ".png"
+            !insertmacro UnregisterContextMenu ".jpg"
+            !insertmacro UnregisterContextMenu ".jpeg"
+            !insertmacro UnregisterContextMenu ".bmp"
+            !insertmacro UnregisterContextMenu ".gif"
+            !insertmacro UnregisterContextMenu ".pdf"
 
             DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillico"
           SectionEnd
@@ -179,7 +211,37 @@ jobs:
           Icon=fillico
           Categories=Graphics;
           Terminal=false
+          MimeType=image/png;image/jpeg;image/bmp;image/gif;application/pdf;
           EOF
+
+          # Script Nautilus pour le clic droit
+          cat > fillico-deb/DEBIAN/postinst <<'POSTINST'
+          #!/bin/bash
+          SCRIPT_DIR="$HOME/.local/share/nautilus/scripts"
+          mkdir -p "$SCRIPT_DIR"
+          cat > "$SCRIPT_DIR/🍭 Ajouter un filigrane" <<'SCRIPT'
+          #!/bin/bash
+          SUPPORTED_EXT="png jpg jpeg bmp gif pdf"
+          for file in $NAUTILUS_SCRIPT_SELECTED_FILE_PATHS; do
+              if [[ -f "$file" ]]; then
+                  ext="${file##*.}"
+                  ext="${ext,,}"
+                  if echo "$SUPPORTED_EXT" | grep -qw "$ext"; then
+                      /usr/local/bin/fillico --quick "$file"
+                  fi
+              fi
+          done
+          SCRIPT
+          chmod +x "$SCRIPT_DIR/🍭 Ajouter un filigrane"
+          POSTINST
+          chmod 755 fillico-deb/DEBIAN/postinst
+
+          # Script de nettoyage à la désinstallation
+          cat > fillico-deb/DEBIAN/postrm <<'POSTRM'
+          #!/bin/bash
+          rm -f "$HOME/.local/share/nautilus/scripts/🍭 Ajouter un filigrane"
+          POSTRM
+          chmod 755 fillico-deb/DEBIAN/postrm
 
           dpkg-deb --build fillico-deb "dist/Fillico-${VERSION}-amd64.deb"
 
