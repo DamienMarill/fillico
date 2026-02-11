@@ -3,7 +3,7 @@
 
 [project]
 name = "fillico"
-version = "1.1.0"
+version = "1.1.2"
 description = "Application de filigranage d'images et PDF avec style Kawaii Pop"
 readme = "README.md"
 license = {text = "MIT"}
