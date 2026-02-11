@@ -24,17 +24,12 @@ if __name__ == "__main__":
         idx = sys.argv.index("--quick")
         file_path = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else None
 
-        # Import direct sans passer par ui/__init__.py (qui charge eel)
-        import importlib.util
-        quick_mode_path = src_path / "ui" / "quick_mode.py"
-        spec = importlib.util.spec_from_file_location("quick_mode", quick_mode_path)
-        quick_mode = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(quick_mode)
+        from ui.quick_mode import QuickModeApp
 
-        app = quick_mode.QuickModeApp(file_path)
+        app = QuickModeApp(file_path)
         result = app.run()
         sys.exit(0 if result and result.success else 1)
     else:
-        # Mode normal: interface complète
+        # Mode normal: interface complète (pywebview)
         from ui import start_app
         start_app()

@@ -67,9 +67,9 @@ function initDragDrop() {
 
   // Click to select - use Python file picker for real paths
   dropZone.addEventListener("click", async () => {
-    if (typeof eel !== "undefined") {
+    if (window.pywebview) {
       try {
-        const files = await eel.select_files()();
+        const files = await pywebview.api.select_files();
         if (files && files.length > 0) {
           handleFilesFromPython(files);
         }
@@ -78,7 +78,7 @@ function initDragDrop() {
         showNotification("Erreur lors de la sélection", "error");
       }
     } else {
-      // Fallback pour dev sans Eel
+      // Fallback pour dev sans pywebview
       elements.fileInput.click();
     }
   });
@@ -160,9 +160,9 @@ async function handleFilesFromPython(filePaths) {
     let size = 0;
     
     // Récupérer la taille du fichier via Python
-    if (typeof eel !== "undefined") {
+    if (window.pywebview) {
       try {
-        const info = await eel.get_file_info(path)();
+        const info = await pywebview.api.get_file_info(path);
         size = info.size || 0;
       } catch (e) {
         console.warn("Could not get file info:", e);
@@ -185,7 +185,7 @@ async function handleFilesFromPython(filePaths) {
   // Auto-set output folder from first file's directory
   if (!state.userSetOutputFolder && newFiles.length > 0) {
     try {
-      const folder = await eel.get_file_directory(newFiles[0].path)();
+      const folder = await pywebview.api.get_file_directory(newFiles[0].path);
       if (folder) {
         elements.outputFolder.value = folder;
       }
@@ -223,7 +223,7 @@ async function handleFiles(files) {
   }
 
   // Les fichiers browser n'ont pas de path réel - on doit les uploader vers Python
-  if (typeof eel !== "undefined") {
+  if (window.pywebview) {
     showNotification("Upload des fichiers...", "info");
     
     for (const file of supportedFiles) {
@@ -232,7 +232,7 @@ async function handleFiles(files) {
         const base64 = await readFileAsBase64(file);
         
         // Envoyer à Python pour sauvegarder dans un dossier temporaire
-        const result = await eel.upload_file(file.name, base64)();
+        const result = await pywebview.api.upload_file(file.name, base64);
         
         if (result.success) {
           // Ajouter le fichier avec le vrai chemin retourné par Python
@@ -259,7 +259,7 @@ async function handleFiles(files) {
     
     showNotification(`${state.files.length} fichier(s) prêt(s) !`, "success");
   } else {
-    // Mode dev sans Eel - juste afficher les fichiers sans path
+    // Mode dev sans pywebview - juste afficher les fichiers sans path
     state.files.push(...supportedFiles.map(f => ({
       path: null,
       name: f.name,
@@ -418,18 +418,18 @@ async function processFiles() {
     try {
       // Call Eel function (or simulate)
       let result;
-      if (typeof eel !== "undefined") {
+      if (window.pywebview) {
         // Vérifier que le fichier a un chemin réel (sélectionné via Python, pas drag&drop navigateur)
         if (!file.path) {
           throw new Error("Fichier sans chemin réel. Utilisez le sélecteur de fichiers.");
         }
-        // Real Eel call
-        result = await eel.process_file(
+        // Appel pywebview
+        result = await pywebview.api.process_file(
           file.path,
           elements.watermarkText.value,
           parseInt(elements.opacitySlider.value) / 100,
           elements.outputFolder.value || null,
-        )();
+        );
       } else {
         // Simulation for testing
         await sleep(500);
@@ -607,11 +607,11 @@ function initOutputFolderPicker() {
   
   if (browseBtn) {
     browseBtn.addEventListener("click", async () => {
-      if (typeof eel !== "undefined") {
+      if (window.pywebview) {
         try {
-          const folder = await eel.select_output_folder(
+          const folder = await pywebview.api.select_output_folder(
             outputFolderInput.value || null
-          )();
+          );
           if (folder) {
             outputFolderInput.value = folder;
             state.userSetOutputFolder = true;
@@ -622,7 +622,7 @@ function initOutputFolderPicker() {
           showNotification("Erreur lors de la sélection du dossier", "error");
         }
       } else {
-        // Fallback pour le dev sans Eel
+        // Fallback pour le dev sans pywebview
         showNotification("Sélection de dossier disponible uniquement dans l'app", "info");
       }
     });
@@ -643,13 +643,13 @@ function initProcessButton() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EEL EXPOSED FUNCTIONS (called from Python)
+// CALLBACKS (appelés par Python via evaluate_js)
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Callback appelé par Python pendant le traitement PDF pour mettre à jour la progression
+ * Callback appelé par Python pendant le traitement PDF pour mettre à jour la progression.
+ * Fonction globale car invoquée via pywebview evaluate_js().
  */
-eel.expose(onPdfProgress);
 function onPdfProgress(filePath, currentPage, totalPages) {
   // Trouver le fichier correspondant et mettre à jour son progress
   const file = state.files.find(f => f.path === filePath);
@@ -701,9 +701,9 @@ async function init() {
   initLogoBounce();
 
   // Définir le dossier de sortie par défaut (home directory)
-  if (typeof eel !== "undefined") {
+  if (window.pywebview) {
     try {
-      const defaultFolder = await eel.get_default_output_folder()();
+      const defaultFolder = await pywebview.api.get_default_output_folder();
       if (defaultFolder) {
         elements.outputFolder.value = defaultFolder;
       }
@@ -713,7 +713,7 @@ async function init() {
 
     // Récupérer et afficher la version dans le titre de la fenêtre
     try {
-      const version = await eel.get_app_version()();
+      const version = await pywebview.api.get_app_version();
       if (version) {
         document.title = `Fillico v${version} - 🍭 Filigraner Illico!`;
       }

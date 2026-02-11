@@ -1,378 +1,309 @@
 """
 🍭 Fillico - UI Application
-Point d'entrée de l'application avec Eel
+Point d'entrée de l'application avec pywebview
 """
 
 import sys
-import subprocess
+import json
+import threading
 from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# --- Windows: empêcher les fenêtres console flash ---
-# Eel lance Chrome/Edge via subprocess.Popen sans CREATE_NO_WINDOW,
-# ce qui provoque un flash de console. On monkey-patch Popen pour
-# ajouter ce flag automatiquement sur Windows.
-if sys.platform == "win32":
-    _OriginalPopen = subprocess.Popen
-
-    class _NoConsolePopen(_OriginalPopen):
-        def __init__(self, *args, **kwargs):
-            if "creationflags" not in kwargs:
-                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-            super().__init__(*args, **kwargs)
-
-    subprocess.Popen = _NoConsolePopen
-
-import eel
+import webview
 from core import WatermarkEngine
 
-# Initialize Eel with web folder
-WEB_FOLDER = Path(__file__).parent.parent.parent / "web"
-eel.init(str(WEB_FOLDER))
 
-# Variable globale pour le fichier en cours de traitement
-_current_file_path = None
+class FillicoAPI:
+    """API Python exposée au JavaScript via pywebview."""
 
-def _pdf_progress_callback(current_page: int, total_pages: int):
-    """Callback appelé pendant le traitement PDF pour envoyer la progression."""
-    global _current_file_path
-    if _current_file_path:
-        # Envoyer la mise à jour au frontend via eel
-        eel.onPdfProgress(_current_file_path, current_page, total_pages)()
+    def __init__(self):
+        self._window = None
+        self._engine = WatermarkEngine()
+        self._engine.set_progress_callback(self._pdf_progress_callback)
+        self._current_file_path = None
 
-# Global engine instance
-engine = WatermarkEngine()
-engine.set_progress_callback(_pdf_progress_callback)
+    def set_window(self, window):
+        """Définit la fenêtre pywebview (appelé après création)."""
+        self._window = window
 
+    def _pdf_progress_callback(self, current_page: int, total_pages: int):
+        """Callback de progression PDF — appelle JS depuis un thread."""
+        if self._window and self._current_file_path:
+            # Échapper le chemin pour JS
+            safe_path = self._current_file_path.replace("\\", "\\\\").replace("'", "\\'")
+            self._window.evaluate_js(
+                f"onPdfProgress('{safe_path}', {current_page}, {total_pages})"
+            )
 
-@eel.expose
-def get_app_version() -> str:
-    """Retourne la version de l'application depuis pyproject.toml."""
-    try:
-        import tomllib
-    except ImportError:
-        import tomli as tomllib
-    
-    try:
-        pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
-        if pyproject_path.exists():
-            with open(pyproject_path, "rb") as f:
-                data = tomllib.load(f)
-            return data.get("project", {}).get("version", "1.0.0")
-    except Exception:
-        pass
-    return "1.0.0"
+    # ═══════════════════════════════════════════════════════════════
+    # API exposée au JavaScript
+    # ═══════════════════════════════════════════════════════════════
 
+    def get_app_version(self) -> str:
+        """Retourne la version de l'application depuis pyproject.toml."""
+        try:
+            import tomllib
+        except ImportError:
+            try:
+                import tomli as tomllib
+            except ImportError:
+                return "1.0.0"
 
-@eel.expose
-def get_default_output_folder() -> str:
-    """Retourne le dossier home de l'utilisateur comme dossier de sortie par défaut."""
-    return str(Path.home())
+        try:
+            pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "rb") as f:
+                    data = tomllib.load(f)
+                return data.get("project", {}).get("version", "1.0.0")
+        except Exception:
+            pass
+        return "1.0.0"
 
+    def get_default_output_folder(self) -> str:
+        """Retourne le dossier home comme dossier de sortie par défaut."""
+        return str(Path.home())
 
-@eel.expose
-def upload_file(filename: str, base64_content: str) -> dict:
-    """
-    Reçoit un fichier en base64 (drag&drop) et le sauvegarde dans un dossier temporaire.
-    
-    Args:
-        filename: Nom du fichier original
-        base64_content: Contenu du fichier encodé en base64
-        
-    Returns:
-        Dictionnaire avec le chemin du fichier sauvegardé
-    """
-    import base64
-    import tempfile
-    
-    try:
-        # Créer un dossier temporaire pour les uploads
-        temp_dir = Path(tempfile.gettempdir()) / "fillico_uploads"
-        temp_dir.mkdir(exist_ok=True)
-        
-        # Décoder et sauvegarder le fichier
-        file_data = base64.b64decode(base64_content)
-        file_path = temp_dir / filename
-        
-        with open(file_path, "wb") as f:
-            f.write(file_data)
-        
-        return {
-            "success": True,
-            "path": str(file_path),
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
+    def upload_file(self, filename: str, base64_content: str) -> dict:
+        """Reçoit un fichier en base64 (drag&drop) et le sauvegarde temporairement."""
+        import base64
+        import tempfile
 
+        try:
+            temp_dir = Path(tempfile.gettempdir()) / "fillico_uploads"
+            temp_dir.mkdir(exist_ok=True)
 
-@eel.expose
-def process_file(
-    file_path: str,
-    watermark_text: str = "CONFIDENTIEL",
-    opacity: float = 0.5,
-    output_folder: str = None,
-) -> dict:
-    """
-    Traite un fichier (image ou PDF) avec un filigrane.
+            file_data = base64.b64decode(base64_content)
+            file_path = temp_dir / filename
 
-    Args:
-        file_path: Chemin du fichier à traiter
-        watermark_text: Texte du filigrane
-        opacity: Opacité (0.0 à 1.0)
-        output_folder: Dossier de sortie optionnel
+            with open(file_path, "wb") as f:
+                f.write(file_data)
 
-    Returns:
-        Dictionnaire avec le résultat du traitement
-    """
-    try:
-        global _current_file_path
-        # Définir le fichier en cours pour le callback de progression
-        _current_file_path = file_path
-        
-        # Update engine settings
-        engine.text = watermark_text
-        engine.opacity = opacity
+            return {"success": True, "path": str(file_path)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
-        # Calculate output path
-        input_path = Path(file_path)
-        if output_folder:
-            output_path = Path(output_folder) / f"{input_path.stem}_watermarked{input_path.suffix}"
-        else:
-            output_path = None
+    def process_file(
+        self,
+        file_path: str,
+        watermark_text: str = "CONFIDENTIEL",
+        opacity: float = 0.5,
+        output_folder: str = None,
+    ) -> dict:
+        """Traite un fichier (image ou PDF) avec un filigrane."""
+        try:
+            self._current_file_path = file_path
 
-        # Process
-        result = engine.process(input_path, output_path)
-        
-        # Réinitialiser le fichier en cours
-        _current_file_path = None
+            self._engine.text = watermark_text
+            self._engine.opacity = opacity
 
-        if result.success:
-            return {
-                "success": True,
-                "input": str(result.input_path.name),
-                "output": str(result.output_path.name),
-                "output_path": str(result.output_path),
-            }
-        else:
+            input_path = Path(file_path)
+            if output_folder:
+                output_path = (
+                    Path(output_folder)
+                    / f"{input_path.stem}_watermarked{input_path.suffix}"
+                )
+            else:
+                output_path = None
+
+            result = self._engine.process(input_path, output_path)
+
+            self._current_file_path = None
+
+            if result.success:
+                return {
+                    "success": True,
+                    "input": str(result.input_path.name),
+                    "output": str(result.output_path.name),
+                    "output_path": str(result.output_path),
+                }
+            else:
+                return {
+                    "success": False,
+                    "input": str(result.input_path.name),
+                    "error": result.error,
+                }
+
+        except Exception as e:
             return {
                 "success": False,
-                "input": str(result.input_path.name),
-                "error": result.error,
+                "input": Path(file_path).name if file_path else "unknown",
+                "error": str(e),
             }
 
-    except Exception as e:
-        return {
-            "success": False,
-            "input": Path(file_path).name if file_path else "unknown",
-            "error": str(e),
-        }
+    def generate_preview(
+        self, file_path: str, watermark_text: str, opacity: float
+    ) -> dict:
+        """Génère un aperçu du filigrane."""
+        try:
+            self._engine.text = watermark_text
+            self._engine.opacity = opacity
 
+            preview = self._engine.generate_preview(file_path)
 
-@eel.expose
-def generate_preview(file_path: str, watermark_text: str, opacity: float) -> dict:
-    """
-    Génère un aperçu du filigrane.
+            if preview:
+                return {"success": True, "preview": preview}
+            else:
+                return {
+                    "success": False,
+                    "error": "Format non supporté pour la prévisualisation",
+                }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
-    Args:
-        file_path: Chemin du fichier
-        watermark_text: Texte du filigrane
-        opacity: Opacité
+    def get_supported_formats(self) -> list:
+        """Retourne la liste des formats supportés."""
+        return list(self._engine.get_supported_extensions())
 
-    Returns:
-        Dictionnaire avec l'image en base64
-    """
-    try:
-        engine.text = watermark_text
-        engine.opacity = opacity
+    def check_file_supported(self, file_path: str) -> bool:
+        """Vérifie si un fichier est supporté."""
+        return self._engine.is_supported(Path(file_path))
 
-        preview = engine.generate_preview(file_path)
+    def get_image_preview(self, file_path: str, max_size: int = 400) -> str:
+        """Génère un aperçu base64 d'une image."""
+        import base64
+        from io import BytesIO
+        from PIL import Image
 
-        if preview:
-            return {
-                "success": True,
-                "preview": preview,
-            }
-        else:
-            return {
-                "success": False,
-                "error": "Format non supporté pour la prévisualisation",
-            }
+        try:
+            path = Path(file_path)
+            if not path.exists():
+                return ""
 
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-        }
+            with Image.open(path) as img:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
 
-@eel.expose
-def get_supported_formats() -> list:
-    """Retourne la liste des formats supportés."""
-    return list(engine.get_supported_extensions())
+                buffer = BytesIO()
+                img.save(buffer, format="JPEG", quality=85)
+                base64_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-
-@eel.expose
-def check_file_supported(file_path: str) -> bool:
-    """Vérifie si un fichier est supporté."""
-    return engine.is_supported(Path(file_path))
-
-
-@eel.expose
-def get_image_preview(file_path: str, max_size: int = 400) -> str:
-    """
-    Génère un aperçu base64 d'une image.
-    
-    Args:
-        file_path: Chemin de l'image
-        max_size: Taille maximale du côté le plus long
-        
-    Returns:
-        Data URL base64 de l'image ou chaîne vide si erreur
-    """
-    import base64
-    from io import BytesIO
-    from PIL import Image
-    
-    try:
-        path = Path(file_path)
-        if not path.exists():
+                return f"data:image/jpeg;base64,{base64_data}"
+        except Exception as e:
+            print(f"Preview error: {e}")
             return ""
-        
-        with Image.open(path) as img:
-            # Redimensionner pour l'aperçu
-            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-            
-            # Convertir en RGB si nécessaire (pour les PNG avec transparence)
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGB')
-            
-            # Encoder en base64
-            buffer = BytesIO()
-            img.save(buffer, format='JPEG', quality=85)
-            base64_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            
-            return f"data:image/jpeg;base64,{base64_data}"
-    except Exception as e:
-        print(f"Preview error: {e}")
+
+    def select_files(self) -> list:
+        """Ouvre un dialogue natif pour sélectionner des fichiers."""
+        if self._window:
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=True,
+                file_types=(
+                    "Fichiers supportés (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.pdf)",
+                    "Images (*.png;*.jpg;*.jpeg;*.bmp;*.gif)",
+                    "PDF (*.pdf)",
+                ),
+            )
+            return list(result) if result else []
+        return []
+
+    def select_output_folder(self, initial_dir: str = None) -> str:
+        """Ouvre un dialogue natif pour sélectionner un dossier."""
+        if self._window:
+            result = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+                directory=initial_dir or "",
+            )
+            return result[0] if result else ""
         return ""
 
+    def get_file_directory(self, file_path: str) -> str:
+        """Retourne le dossier parent d'un fichier."""
+        return str(Path(file_path).parent)
 
-@eel.expose
-def select_files() -> list:
-    """
-    Ouvre un dialogue pour sélectionner des fichiers à traiter.
-    
-    Returns:
-        Liste des chemins de fichiers sélectionnés
-    """
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    
-    files = filedialog.askopenfilenames(
-        title="Sélectionner des fichiers à filigraner",
-        filetypes=[
-            ("Tous les fichiers supportés", "*.png *.jpg *.jpeg *.bmp *.gif *.pdf"),
-            ("Images", "*.png *.jpg *.jpeg *.bmp *.gif"),
-            ("PDF", "*.pdf"),
-        ]
-    )
-    
-    root.destroy()
-    return list(files) if files else []
+    def get_file_info(self, file_path: str) -> dict:
+        """Récupère les informations d'un fichier."""
+        try:
+            path = Path(file_path)
+            if path.exists():
+                stat = path.stat()
+                return {"size": stat.st_size, "exists": True}
+            return {"size": 0, "exists": False}
+        except Exception:
+            return {"size": 0, "exists": False}
 
-
-@eel.expose
-def select_output_folder(initial_dir: str = None) -> str:
-    """
-    Ouvre un dialogue pour sélectionner un dossier de sortie.
-    
-    Args:
-        initial_dir: Dossier initial à afficher
-        
-    Returns:
-        Chemin du dossier sélectionné ou chaîne vide si annulé
-    """
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()  # Cacher la fenêtre principale
-    root.attributes('-topmost', True)  # Mettre au premier plan
-    
-    folder = filedialog.askdirectory(
-        title="Sélectionner le dossier de destination",
-        initialdir=initial_dir if initial_dir else None,
-    )
-    
-    root.destroy()
-    return folder or ""
-
-
-@eel.expose
-def get_file_directory(file_path: str) -> str:
-    """
-    Retourne le dossier parent d'un fichier.
-    
-    Args:
-        file_path: Chemin du fichier
-        
-    Returns:
-        Chemin du dossier parent
-    """
-    return str(Path(file_path).parent)
-
-
-@eel.expose
-def get_file_info(file_path: str) -> dict:
-    """
-    Récupère les informations d'un fichier (taille, etc).
-    
-    Args:
-        file_path: Chemin du fichier
-        
-    Returns:
-        Dictionnaire avec les infos du fichier
-    """
+def _set_window_icon_windows(icon_path: str, title: str):
+    """Applique l'icône de la fenêtre via Win32 API (pywebview ne le supporte pas sur Windows)."""
+    if sys.platform != "win32":
+        return
     try:
-        path = Path(file_path)
-        if path.exists():
-            stat = path.stat()
-            return {
-                "size": stat.st_size,
-                "exists": True,
-            }
-        return {"size": 0, "exists": False}
-    except Exception:
-        return {"size": 0, "exists": False}
+        import ctypes
+        from ctypes import wintypes
+        import time
+
+        user32 = ctypes.windll.user32
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x0010
+        LR_DEFAULTSIZE = 0x0040
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
+
+        # Charger l'icône depuis le fichier
+        hicon = user32.LoadImageW(
+            0, icon_path, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
+        )
+        if not hicon:
+            return
+
+        # Trouver la fenêtre par titre (attendre qu'elle soit créée)
+        for _ in range(20):
+            hwnd = user32.FindWindowW(None, title)
+            if hwnd:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+                return
+            time.sleep(0.25)
+    except Exception as e:
+        print(f"Icon error: {e}")
 
 
 def start_app():
-    """Démarre l'application Eel."""
+    """Démarre l'application pywebview."""
+    # Identifier l'app comme "Fillico" dans la barre des tâches Windows
+    if sys.platform == "win32":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("fillico.app")
+
     print("🍭 Fillico - Démarrage...")
 
-    try:
-        # Start Eel with default browser
-        eel.start(
-            "index.html",
-            size=(1200, 800),
-            position=(100, 100),
-            mode="chrome",  # or 'edge', 'default'
-        )
-    except (SystemExit, MemoryError, KeyboardInterrupt):
-        pass
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        # Fallback to default browser
-        eel.start("index.html", mode="default")
+    api = FillicoAPI()
+
+    # Résoudre les chemins
+    base_dir = Path(__file__).parent.parent.parent
+    if getattr(sys, "frozen", False):
+        base_dir = Path(sys._MEIPASS)
+
+    web_folder = base_dir / "web"
+    icon_path = base_dir / "fillico.ico"
+
+    title = "🍭 Fillico - Filigraner Illico!"
+
+    window = webview.create_window(
+        title,
+        url=str(web_folder / "index.html"),
+        js_api=api,
+        width=1200,
+        height=800,
+        min_size=(800, 600),
+    )
+
+    api.set_window(window)
+
+    # Appliquer l'icône via Win32 API dans un thread séparé
+    if sys.platform == "win32" and icon_path.exists():
+        import threading
+        threading.Thread(
+            target=_set_window_icon_windows,
+            args=(str(icon_path), title),
+            daemon=True,
+        ).start()
+
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":
