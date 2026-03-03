@@ -5,7 +5,22 @@ Le filigrane n'est plus une corvée, c'est une friandise visuelle !
 """
 
 import sys
+import os
 from pathlib import Path
+
+# Fix Windows encoding issues (emojis in print statements)
+if sys.platform == "win32":
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 # Add src to Python path
 src_path = Path(__file__).parent / "src"

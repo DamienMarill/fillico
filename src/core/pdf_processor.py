@@ -15,6 +15,16 @@ from PIL import Image
 from .watermark_renderer import WatermarkRenderer
 
 
+def _safe_print(msg: str):
+    """Print sécurisé pour PyInstaller windowed mode et encodage Windows."""
+    import sys
+    try:
+        if sys.stdout is not None:
+            print(msg.encode("utf-8", errors="replace").decode("utf-8", errors="replace"))
+    except Exception:
+        pass
+
+
 class PDFProcessor:
     """Processeur de filigrane pour les fichiers PDF."""
 
@@ -152,15 +162,15 @@ class PDFProcessor:
             output_path = input_path.parent / f"{input_path.stem}_watermarked.pdf"
 
         # Convertir PDF en images
-        print(f"  📄 Conversion du PDF en images ({self.dpi} DPI)...")
+        _safe_print(f"  [PDF] Conversion du PDF en images ({self.dpi} DPI)...")
         pages = self._pdf_to_images(input_path)
-        print(f"  📄 {len(pages)} page(s) à traiter")
+        _safe_print(f"  [PDF] {len(pages)} page(s) a traiter")
 
         # Appliquer le filigrane sur chaque page
         watermarked_pages = []
         total_pages = len(pages)
         for i, page in enumerate(pages):
-            print(f"  🍭 Filigranage page {i + 1}/{total_pages}...")
+            _safe_print(f"  [*] Filigranage page {i + 1}/{total_pages}...")
             # Appeler le callback de progression si défini
             if self.progress_callback:
                 self.progress_callback(i + 1, total_pages)
@@ -168,7 +178,7 @@ class PDFProcessor:
             watermarked_pages.append(watermarked)
 
         # Reconvertir en PDF
-        print(f"  📄 Création du PDF final...")
+        _safe_print(f"  [PDF] Creation du PDF final...")
         self._images_to_pdf(watermarked_pages, output_path)
 
         return output_path

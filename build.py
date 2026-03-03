@@ -7,7 +7,20 @@ Script pour générer les exécutables et installateurs
 import subprocess
 import shutil
 import sys
+import os
 from pathlib import Path
+
+# Fix Windows encoding issues (emojis in print statements)
+if sys.platform == "win32" and sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.platform == "win32" and sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 def clean_build():
